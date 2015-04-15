@@ -1,0 +1,581 @@
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Program Files (x86)\Keil\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include <reg51.h>
+   2          #include <intrins.h>
+   3          
+   4          #define uchar unsigned char
+   5          #define uint unsigned int
+   6          
+   7          sbit wela = P2^6;
+   8          sbit dula = P2^7;
+   9          sbit DSCLK = P1^0;
+  10          sbit DSIO = P1^1;
+  11          sbit DSRST = P1^2;
+  12          
+  13          sbit temperature=P2^2; 
+  14          sbit lcdrs = P3^5;
+  15          sbit lcdrw = P3^6;
+  16          sbit lcden = P3^4;
+  17          
+  18          sbit key = P3^7;
+  19          
+  20          sbit iicscl = P2^0;
+  21          sbit iicsda = P2^1;
+  22          
+  23          uchar code READ_RTC_ADDR[7] = {0x81, 0x83, 0x85, 0x87, 0x89, 0x8B, 0x8D};
+  24          uchar code WRITE_RTC_ADDR[7] = {0x80, 0x82, 0x84, 0x86, 0x88, 0x8A, 0x8C};
+  25          uchar TIME[7] = {0, 0x42, 0x17, 0x13, 0x04, 0x01, 0x15};
+  26          uchar code hello[]="hello";//5
+  27          
+  28          uint tmpvl;
+  29          
+  30          uchar timer;
+  31          
+  32          uchar address;
+  33          
+  34          void delay(uint z);
+  35          void DS1302Write(uchar addr, uchar dat);
+  36          uchar DS1302Read(uchar addr);
+  37          void DS1302Init();
+  38          void DS1302ReadTime();
+  39          void ds18b20_init(void);
+  40          void ds18b20_wait(void);
+  41          bit ds18b20_read_bit(void);
+  42          unsigned char ds18b20_read_byte(void);
+  43          void ds18b20_write_byte(unsigned char dat);
+  44          void ds18b20_send_change_command(void);
+  45          void ds18b20_send_read_command(void);
+  46          int ds18b20_get_temperature(void);
+  47          void iic_start();
+  48          void iic_stop();
+  49          void iic_respons();
+  50          void iic_no_respons();
+  51          void iic_init();
+  52          void iic_write_byte(uchar dat);
+  53          uchar iic_read_byte();
+  54          uchar iic_equipment_read_data(uchar add,uchar command);
+  55          void iic_equipment_write_data(uchar add, uchar command1,uchar command2);
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 2   
+
+  56          void timer_init();
+  57          void write_com(uchar com);
+  58          void write_data(uchar date);
+  59          void init();
+  60          void LCD_Display_Time();
+  61          void LCD_Display_Temperature(uchar a, uchar b);
+  62          
+  63          void main(){
+  64   1      //  uchar i;
+  65   1        uint rdvl;
+  66   1        uchar count = 0;
+  67   1        init();
+  68   1        iic_init();
+  69   1        ds18b20_send_change_command();
+  70   1        timer_init();
+  71   1      //  DS1302Init();
+  72   1        while(1){
+  73   2          tmpvl=ds18b20_get_temperature();
+  74   2          DS1302ReadTime();
+  75   2          LCD_Display_Time();
+  76   2          LCD_Display_Temperature(tmpvl%100/10,tmpvl%10);
+  77   2          ds18b20_send_change_command();
+  78   2          if(key == 0)
+  79   2          {
+  80   3            delay(15);
+  81   3            if(key == 0)
+  82   3            {
+  83   4              rdvl = iic_equipment_read_data(0xa1,count);
+  84   4              write_com(0x8D);
+  85   4              write_data(0x30+rdvl%100/10);
+  86   4              write_com(0x8E);
+  87   4              write_data(0x30+rdvl%10);
+  88   4              count++;
+  89   4              if(count == 20)
+  90   4                count = 0;
+  91   4            }
+  92   3            while(!key);
+  93   3            delay(15);
+  94   3            while(!key);
+  95   3          }
+  96   2        }
+  97   1      }
+  98          
+  99          void timer0_interrupt() interrupt 1
+ 100          {
+ 101   1        TR0 = 0;
+ 102   1        ET0 = 0;
+ 103   1        TH1 = (65536-50000)/256;
+ 104   1        TL0 = (65536-50000)%256;
+ 105   1        timer++;
+ 106   1        if(timer == 100)
+ 107   1        {
+ 108   2          timer = 0;
+ 109   2          iic_equipment_write_data(0xa0,address,tmpvl);
+ 110   2          address++;
+ 111   2          if(address == 20){
+ 112   3            address = 0;
+ 113   3          }
+ 114   2        }
+ 115   1        TR0 = 1;
+ 116   1        ET0 = 1;
+ 117   1      }
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 3   
+
+ 118          
+ 119          void delay(uint z){
+ 120   1        uint x,y;
+ 121   1        for(x=z;x>0;x--){
+ 122   2          for(y=110;y>0;y--);
+ 123   2        }
+ 124   1      }
+ 125          
+ 126          
+ 127          void DS1302Write(uchar addr, uchar dat){
+ 128   1        uchar i;
+ 129   1        DSRST = 0;
+ 130   1        _nop_();
+ 131   1        DSCLK = 0;
+ 132   1        _nop_();
+ 133   1        DSRST = 1;
+ 134   1        _nop_();
+ 135   1        
+ 136   1        for (i = 0; i < 8; i++){
+ 137   2          DSIO = addr & 0x01;
+ 138   2          addr >>= 1;
+ 139   2          DSCLK = 1;
+ 140   2          _nop_();
+ 141   2          DSCLK = 0;
+ 142   2          _nop_();
+ 143   2        }
+ 144   1        
+ 145   1        for (i = 0; i < 8; i++){
+ 146   2          DSIO = dat & 0x01;
+ 147   2          dat >>= 1;
+ 148   2          DSCLK = 1;
+ 149   2          _nop_();
+ 150   2          DSCLK = 0;
+ 151   2          _nop_();  
+ 152   2        } 
+ 153   1           
+ 154   1        DSRST = 0;
+ 155   1        _nop_();
+ 156   1      }
+ 157          
+ 158          uchar DS1302Read(uchar addr){
+ 159   1        uchar n,dat,dat1;
+ 160   1        DSRST = 0;
+ 161   1        _nop_();
+ 162   1      
+ 163   1        DSCLK = 0;//先将SCLK置低电平。
+ 164   1        _nop_();
+ 165   1        DSRST = 1;//然后将RST(CE)置高电平。
+ 166   1        _nop_();
+ 167   1      
+ 168   1        for(n=0; n<8; n++){//开始传送八位地址命令
+ 169   2          DSIO = addr & 0x01;//数据从低位开始传送
+ 170   2          addr >>= 1;
+ 171   2          DSCLK = 1;//数据在上升沿时，DS1302读取数据
+ 172   2          _nop_();
+ 173   2          DSCLK = 0;//DS1302下降沿时，放置数据
+ 174   2          _nop_();
+ 175   2        }
+ 176   1        _nop_();
+ 177   1        for(n=0; n<8; n++){//读取8位数据
+ 178   2          dat1 = DSIO;//从最低位开始接收
+ 179   2          dat = (dat>>1) | (dat1<<7);
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 4   
+
+ 180   2          DSCLK = 1;
+ 181   2          _nop_();
+ 182   2          DSCLK = 0;//DS1302下降沿时，放置数据
+ 183   2          _nop_();
+ 184   2        }
+ 185   1      
+ 186   1        DSRST = 0;
+ 187   1        _nop_();  //以下为DS1302复位的稳定时间,必须的。
+ 188   1        DSCLK = 1;
+ 189   1        _nop_();
+ 190   1        DSIO = 0;
+ 191   1        _nop_();
+ 192   1        DSIO = 1;
+ 193   1        _nop_();
+ 194   1        return dat; 
+ 195   1      }
+ 196          
+ 197          void DS1302Init(){
+ 198   1        uchar n;
+ 199   1        DS1302Write(0x8E,0X00);
+ 200   1        for(n=0; n<7; n++){
+ 201   2          DS1302Write(WRITE_RTC_ADDR[n],TIME[n]); 
+ 202   2        }
+ 203   1        DS1302Write(0x8E,0x80);
+ 204   1      }
+ 205          
+ 206          void DS1302ReadTime(){
+ 207   1        unsigned char n;
+ 208   1        for (n=0; n<7; n++)//读取7个字节的时钟信号：分秒时日月周年
+ 209   1        {
+ 210   2          TIME[n] = DS1302Read(READ_RTC_ADDR[n]);
+ 211   2        }
+ 212   1      }
+ 213          
+ 214          void ds18b20_init(void){
+ 215   1        unsigned int i;
+ 216   1        temperature=0;
+ 217   1        i=100;
+ 218   1        while(i>0)
+ 219   1          i--;
+ 220   1        temperature=1;
+ 221   1        i=4;
+ 222   1        while(i>0)
+ 223   1          i--;
+ 224   1      }
+ 225          //DS18B20等待函数
+ 226          void ds18b20_wait(void){
+ 227   1        unsigned int i;
+ 228   1        while(temperature);
+ 229   1        while(~temperature);//IO口电平取反
+ 230   1        i=4;
+ 231   1        while(i>0)
+ 232   1          i--;
+ 233   1      }
+ 234          //DS18B20读取一位数据
+ 235          bit ds18b20_read_bit(void){
+ 236   1        unsigned int i;
+ 237   1        bit b;
+ 238   1        temperature=0;
+ 239   1        i++;
+ 240   1        temperature=1;
+ 241   1        i++;
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 5   
+
+ 242   1        i++;
+ 243   1        b=temperature;
+ 244   1        i=8;
+ 245   1        while(i>0)
+ 246   1          i--;
+ 247   1        return b;
+ 248   1      }
+ 249          //DS18B20读取数据
+ 250          unsigned char ds18b20_read_byte(void){
+ 251   1        unsigned int i;
+ 252   1        unsigned char j,dat;
+ 253   1        dat=0;
+ 254   1        for(i=0;i<8;i++){
+ 255   2          j=ds18b20_read_bit();
+ 256   2          dat=(j<<7)|(dat>>1);
+ 257   2        }
+ 258   1        return dat;
+ 259   1      }
+ 260          //DS18B20写一位函数
+ 261          void ds18b20_write_byte(unsigned char dat){
+ 262   1        unsigned int i;
+ 263   1        unsigned char j;
+ 264   1        bit b;
+ 265   1        for(j=0;j<8;j++){
+ 266   2          b=dat&0x01;
+ 267   2          dat>>=1;
+ 268   2          if(b){
+ 269   3            temperature=0;
+ 270   3            temperature=1;
+ 271   3            i=8;
+ 272   3            while(i>0)
+ 273   3              i--;
+ 274   3          }
+ 275   2          else{
+ 276   3            temperature=0;
+ 277   3            i=8;
+ 278   3            while(i>0)
+ 279   3              i--;
+ 280   3            temperature=1;
+ 281   3            i++;
+ 282   3            i++;
+ 283   3          }
+ 284   2        }
+ 285   1      }
+ 286          //DS18B20发送变换命令
+ 287          void ds18b20_send_change_command(void){
+ 288   1        ds18b20_init();
+ 289   1        ds18b20_wait();
+ 290   1        delay(1);
+ 291   1        ds18b20_write_byte(0xcc);
+ 292   1        ds18b20_write_byte(0x44);
+ 293   1      }
+ 294          //DS18B20发送读取命令
+ 295          void ds18b20_send_read_command(void){
+ 296   1        ds18b20_init();
+ 297   1        ds18b20_wait();
+ 298   1        delay(1);
+ 299   1        ds18b20_write_byte(0xcc);
+ 300   1        ds18b20_write_byte(0xbe);
+ 301   1      }
+ 302          //DS18B20读取温度
+ 303          int ds18b20_get_temperature(void){
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 6   
+
+ 304   1        unsigned int tmpvalue;
+ 305   1        int value;
+ 306   1        float t;
+ 307   1        unsigned char low,high;
+ 308   1        ds18b20_send_read_command();
+ 309   1        low=ds18b20_read_byte();
+ 310   1        high=ds18b20_read_byte();
+ 311   1        tmpvalue=high;
+ 312   1        tmpvalue<<=8;
+ 313   1        tmpvalue|=low;
+ 314   1        value=tmpvalue;
+ 315   1        t=value*0.0625;
+ 316   1        value=t+(value>0?0.5:-0.5);//判断VALUE的值，如果大于0，则加0.5否则-0.5
+ 317   1        return value;
+ 318   1      }
+ 319          
+ 320          void iic_start()
+ 321          {
+ 322   1        iicsda=1;
+ 323   1        _nop_();
+ 324   1        iicscl=1;
+ 325   1        _nop_();
+ 326   1        iicsda=0;
+ 327   1        _nop_();
+ 328   1      }
+ 329          
+ 330          void iic_stop()
+ 331          {
+ 332   1        iicsda=0;
+ 333   1        _nop_();
+ 334   1        iicscl=1;
+ 335   1        _nop_();
+ 336   1        iicsda=1;
+ 337   1        _nop_();
+ 338   1      }
+ 339          
+ 340          void iic_respons()
+ 341          {
+ 342   1        uchar i;
+ 343   1        iicscl=1;
+ 344   1        _nop_();
+ 345   1        while((iicsda==1)&&(i<255))
+ 346   1          i++;
+ 347   1        iicscl=0;
+ 348   1        _nop_();
+ 349   1      }
+ 350          
+ 351          void iic_no_respons()
+ 352          {
+ 353   1        iicsda=1;
+ 354   1        _nop_();
+ 355   1        iicscl=1;
+ 356   1        _nop_();
+ 357   1        iicscl=0;
+ 358   1        _nop_();
+ 359   1      }
+ 360          
+ 361          void iic_init()
+ 362          {
+ 363   1        iicsda=1;
+ 364   1        iicscl=1;
+ 365   1      }
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 7   
+
+ 366          
+ 367          void iic_write_byte(uchar dat)
+ 368          {
+ 369   1        uchar i;
+ 370   1        iicscl=0;
+ 371   1        for(i=0;i<8;i++)
+ 372   1        {
+ 373   2          if (dat & 0x80)
+ 374   2          {
+ 375   3            iicsda=1;
+ 376   3          }
+ 377   2          else
+ 378   2          {
+ 379   3            iicsda=0;
+ 380   3          }
+ 381   2          dat=dat<<1;
+ 382   2          _nop_();
+ 383   2          iicscl=1;
+ 384   2          _nop_();
+ 385   2          iicscl=0;
+ 386   2          _nop_();
+ 387   2        }
+ 388   1        iicsda=1;
+ 389   1        _nop_();
+ 390   1      }
+ 391          
+ 392          uchar iic_read_byte()
+ 393          {
+ 394   1        uchar i,dat;
+ 395   1        iicscl=0;
+ 396   1        _nop_();
+ 397   1        iicsda=1;
+ 398   1        _nop_();
+ 399   1        for(i=0;i<8;i++)
+ 400   1        {
+ 401   2          iicscl=1;
+ 402   2          _nop_();
+ 403   2          dat<<=1;
+ 404   2          if (iicsda)
+ 405   2          {
+ 406   3            dat++;
+ 407   3          }
+ 408   2          iicscl=0;
+ 409   2          _nop_();
+ 410   2        }
+ 411   1        return dat;
+ 412   1      }
+ 413          
+ 414          uchar iic_equipment_read_data(uchar add,uchar command)
+ 415          {
+ 416   1        uchar temp;
+ 417   1        uchar tt=add&0xfe;
+ 418   1        iic_init();
+ 419   1        iic_start();
+ 420   1        iic_write_byte(tt);
+ 421   1        iic_respons();
+ 422   1        iic_write_byte(command);
+ 423   1        iic_respons();
+ 424   1        iic_start();
+ 425   1        iic_write_byte(add);
+ 426   1        iic_respons();
+ 427   1        temp=iic_read_byte();
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 8   
+
+ 428   1        iic_no_respons();
+ 429   1        iic_stop();
+ 430   1        return temp;
+ 431   1      }
+ 432          
+ 433          void iic_equipment_write_data(uchar add, uchar command1,uchar command2)
+ 434          {
+ 435   1        iic_init();
+ 436   1        iic_start();
+ 437   1        iic_write_byte(add);
+ 438   1        iic_respons();
+ 439   1        iic_write_byte(command1);
+ 440   1        iic_respons();
+ 441   1        iic_write_byte(command2);
+ 442   1        iic_respons();
+ 443   1        iic_stop();
+ 444   1      }
+ 445          
+ 446          void timer_init(){
+ 447   1        TMOD = 0X01;
+ 448   1        TH1 = (65536-50000)/256;
+ 449   1        TL0 = (65536-50000)%256;
+ 450   1        ET0 = 1;
+ 451   1        TR0 = 1;
+ 452   1        EA = 1;
+ 453   1      }
+ 454          void write_com(uchar com)
+ 455          {
+ 456   1        lcdrs=0;
+ 457   1        P0=com;
+ 458   1        delay(5);
+ 459   1        lcden=1;
+ 460   1        delay(5);
+ 461   1        lcden=0;
+ 462   1      }
+ 463          
+ 464          void write_data(uchar date)
+ 465          {
+ 466   1        lcdrs=1;
+ 467   1        P0=date;
+ 468   1        delay(5);
+ 469   1        lcden=1;
+ 470   1        delay(5);
+ 471   1        lcden=0;
+ 472   1      }
+ 473          
+ 474          void init()
+ 475          {
+ 476   1        timer = 0;
+ 477   1        wela = 0;
+ 478   1        dula = 0;
+ 479   1        lcdrw = 0;
+ 480   1        lcden=0;
+ 481   1        write_com(0x38);
+ 482   1        write_com(0x0e);
+ 483   1        write_com(0x06);
+ 484   1        write_com(0x01);
+ 485   1        write_com(0x80+0x10);
+ 486   1      }
+ 487          
+ 488          void LCD_Display_Time(){
+ 489   1        write_com(0x80);
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 9   
+
+ 490   1        write_data('2');
+ 491   1        write_com(0x81);
+ 492   1        write_data('0');
+ 493   1        write_com(0x82);
+ 494   1        write_data(0x30+TIME[6]/16);
+ 495   1        write_com(0x83);
+ 496   1        write_data(0x30+TIME[6]%16);
+ 497   1        write_com(0x84);
+ 498   1        write_data('-');
+ 499   1        write_com(0x85);
+ 500   1        write_data(0x30+TIME[4]/16);
+ 501   1        write_com(0x86);
+ 502   1        write_data(0x30+TIME[4]%16);
+ 503   1        write_com(0x87);
+ 504   1        write_data('-');
+ 505   1        write_com(0x88);
+ 506   1        write_data(0x30+TIME[3]/16);
+ 507   1        write_com(0x89);
+ 508   1        write_data(0x30+TIME[3]%16);
+ 509   1        write_com(0x8A);
+ 510   1        write_data(' ');
+ 511   1        write_com(0x8B);
+ 512   1        write_data(0x30+TIME[5]%16);
+ 513   1        write_com(0x80+0X40);
+ 514   1        write_data(0x30+TIME[2]/16);
+ 515   1        write_com(0x80+0X41);
+ 516   1        write_data(0x30+TIME[2]%16);
+ 517   1        write_com(0x80+0X42);
+ 518   1        write_data(':');
+ 519   1        write_com(0x80+0X43);
+ 520   1        write_data(0x30+TIME[1]/16);
+ 521   1        write_com(0x80+0X44);
+ 522   1        write_data(0x30+TIME[1]%16);
+ 523   1        write_com(0x80+0X45);
+ 524   1        write_data(':');
+ 525   1        write_com(0x80+0X46);
+ 526   1        write_data(0x30+TIME[0]/16);
+ 527   1        write_com(0x80+0X47);
+ 528   1        write_data(0x30+TIME[0]%16);
+ 529   1      }
+ 530          
+ 531          void LCD_Display_Temperature(uchar a, uchar b){
+ 532   1        write_com(0x80+0X49);
+ 533   1        write_data(0x30+a);
+ 534   1        write_com(0x80+0X4A);
+ 535   1        write_data(0x30+b);
+ 536   1        write_com(0x80+0X4B);
+ 537   1        write_data('`');
+ 538   1        write_com(0x80+0X4C);
+ 539   1        write_data('C');
+ 540   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1336    ----
+   CONSTANT SIZE    =     20    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     11      10
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       2
+END OF MODULE INFORMATION.
+
+C51 COMPILER V9.52.0.0   MAIN                                                              04/13/2015 18:18:51 PAGE 10  
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
